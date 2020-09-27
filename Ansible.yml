@@ -1,0 +1,261 @@
+
+---
+- hosts: 
+  tasks:
+    - name: create a file
+      file:
+        path: 
+        state: touch
+      register: out   #register allows you to save a task output in a varibale
+    - debug: msg="the value of output is "{{ out }}" #way to print a register/task output
+    - name: edit a file and insert message
+      lineinfile:
+        path: /path/
+        line: "{{out.uid}}" #out variable contains too much data , using out.uid , you are going specific
+
+#Notify and handlers :
+  #notify:
+
+- name: template configuration file
+  template:
+    src: filename
+    dest: /etc/httpd/
+  notify: #when this is executed, (in yellow) handler will be called.
+    - roll web #(can be  a list of tasks )
+  
+
+#handlers:(starts with same line as of tasks) , handlers can also be defined above the tasks.
+  -name: restart apache
+     service:
+       name: httpd
+       state: restart
+  listen: "roll web"
+
+
+#Looping :
+
+---
+- hosts
+  tasks: 
+  - name: create a user
+    user:
+      name: "{{ items }}"
+    with_items
+      - samy
+      - jony
+      - towey 
+
+#will create 3 users from the above list 
+  ---
+  #when condition:
+
+---
+ -hosts:
+  become: yes
+  tasks:
+  - name: change index.html
+    lineinfile:
+      path: /var/www/html/index.html
+      line: "Adding this line"
+    when:
+      - ansible_hostname == "somehostname"  #ansible_hostname is from ansible fact.
+
+#Error Handling : ignore_error or when_failed or changed_when and blocks(try catch)
+
+#ignore :
+
+- hosts: local
+  tasks:
+    - name: get index.html from urls of webserver.
+      get_url:
+        url: "http:{{items}}/index.html"
+        dest: /tmp/"{{items}}"
+      ignore_errors: yes
+      with_items:
+        - hostname1
+        - hostname2
+
+#same with block and rescue , similar to try catch finally
+
+- hosts:
+  tasks:
+    - name: get the file
+      block:
+        - get_url:
+            url: "http:myserver.index.html"
+            dest: /tmp/
+      rescue: #Will work only if block fails
+        - debug: msg = "file does not exists"
+      always: #will run always
+        - debug: msg = "this is optional to use, will run always if specified"
+
+
+#tags and skip tags # Very important, Create a big play and execute small section of it, like tag start to start and tag stop to stop the enviroment
+---
+- hosts:
+  tasks:
+    - name: Start the Apache.
+      service:
+        name: htppd
+        state: started
+      tags:
+      - start 
+    - name: stop the apache
+      service:
+         name: httpd
+         state: stopped
+      tags:
+      - stop 
+# run the play by ansible-playbook test.yml --tags "start" or --skip-tags "stop" or --tags "start,stop"
+
+
+# templates:
+- hosts:
+  tasks:
+  - name: install apcge
+    yum:
+      name: httpd
+      state: present
+  - name: Using apache config template
+    template: src=/srv/httpd.j2 dest=/etc/httpd.conf
+
+# in template is skeleton where we have ansible variables/server facts where data aas to be replaced.
+# file extention is j2 cos of jinja2 usage 
+# here httpd.j2 will be on ansible server, so if we create a file like {{ ansible_default_ipv4.address }} it will get converted to respective value in output conf/txt file.
+
+https://jinja.palletsprojects.com/en/2.10.x/templates/
+
+for more info
+#varibales
+
+#basic example: plus magic varibale
+---
+- hosts:
+  vars:
+    file_path: /home/ansible/sample.txt
+  tasks:
+    - name: create a file
+      file:
+        path: "{{ file_path }}"
+        state: touch
+    - name: generate inventory
+      lineinfile:
+      path: "{{ file_path }}"
+      line: "{{group['labsever']}}"
+      #here labserver is the host group from inventory and example will add all host from labserver host group to the file
+      #output ['host1','host2',host3] inside sample.txt
+#Gonna use filters to make a space seprated list from an python list.
+# just change the line group var as "{{groups['labservers']|join('  ')}}"
+# where join is a jinja2 filter , more such can be found on website link above.
+# output : host1 host2 host3
+
+#using list from a sample file and looping import_tasks
+
+#list file content: called users_lst (for below example)
+staff:
+  - joe
+  - john
+  - bob
+  - sam 
+faculty:
+   - max 
+   - madmik
+   
+---
+- hosts:
+  vars:
+    userFile: /home/ansible/vars/list
+  tasks:
+  - name: create a file
+    file:
+      path: "{{ userFile }}"
+      state: touch
+  - name: list users
+    lineinfile
+      path: "{{userFile}}"
+      line: "{{ items }}"
+    with_items:
+      - "{{ staff }}"
+      - "{{ faculty }}"
+    
+    ansible playbook -e "@users_lst"
+    # -e is used to pass varibale like dictionory on command line, or pass @ file name for vars.
+
+    #output:
+    joe 
+    john 
+    bob 
+    etc 
+
+# FACTS : information discovered on target system
+# ansible all -m setup -a "filter=*ipv4*"
+
+# custom facts using facts.d
+# create a directry on target machine called /etc/ansibe/facts.d all the valid files ending with .fact are returned under ansible_local with facts
+
+
+#facts.d example, L just create a ini file with = or a json or list on remote host with .fact
+# pull by : ansible hostname -m setup -a "filter=ansible_local"
+  
+
+#Roles
+
+#Roles are like folder with many subfolders for vars , default or handler etc 
+#can call a role directly from 
+
+---
+- hosts:
+    roles:
+    - roles: apache
+
+#or
+
+---
+- hosts:
+  tasks:
+  - include_role:
+      name: apache
+    tags:
+    - RH_HTTPD
+    when: "ansible_os_family == 'RedHat'"
+
+# ROle dependency : just ensuring that other role has been executed before current role.
+# in meta folder create a mail.yml and add 
+#dependency :
+# role : role_name
+#Example installing php with apache role dependency, will install apache role first if not installed.
+# Can use meta direcotory meta.yml to describe dependencies, set allow_duplicates aattribute to true to execute a role more than once in a play.
+
+#ansible galaxy : Roles ready to be used, like install and configure nagios.
+#location : google ansible galaxy 
+#usage ansible galaxy init "empty role" or ansible agalaxy install <username.role> from website 
+#ansible galaxy list to list the roles.
+# ansible galaxy search elastic to search roles directly from server instead of website
+# ansible galaxy remove rolename to delete a role
+
+
+#parallelism
+#by defualt set for process to get 5 forks can change on run time by -f flag
+
+# serial option inside import_playbook
+
+---
+- hosts:
+  become: yes
+  serial: #can specify one value as serial:10 to run on 10 simutanously
+    - 1 # run on one , allows you to cancel on one server if there is a problem
+    - 2 # run of two 
+    - 50% # run on 50 % of list
+  max_fall_percentage: 30 #optional , will stop play if it fails on 30 percentage servers
+  tasks:
+  - name: add a line
+    lineinfile:
+      path: /etc/host
+      line: "line" 
+
+
+#Ansible Vault
+# ansible-vault encrupt file_name , use rekey to reset the password and encrypt again
+# set playbook for --ask-vault-password or --ask-vault_file for password at playbook runtime
+# as a replacement for --ask-valut--password(depricated) , --vault-id is used as it can manage multiple passwords in a single play.
+# to edit a encrypted file via vault use anisble-vault edit filename , just "view" for less command
