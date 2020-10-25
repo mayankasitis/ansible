@@ -4,4 +4,4 @@
   - name: create a user
     yum:
       name: nginx
-      state: present
+      state: absent
